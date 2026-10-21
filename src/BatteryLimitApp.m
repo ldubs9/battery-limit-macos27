@@ -92,7 +92,9 @@
     NSError *error = nil;
     if ([self.adapterController setAdapterEnabled:YES error:&error]) {
         self.adapterDisabledByUs = NO;
-        [BLSettings() setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
+        NSUserDefaults *settings = BLSettings();
+        [settings setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
+        [settings synchronize];
         self.lastForceDischargeError = nil;
     } else {
         self.lastForceDischargeError = error.localizedDescription;
@@ -121,7 +123,9 @@
         if (adapterEnabled) {
             if ([self.adapterController setAdapterEnabled:NO error:&error]) {
                 self.adapterDisabledByUs = YES;
-                [BLSettings() setBool:YES forKey:BLForceDischargeAdapterDisabledKey];
+                NSUserDefaults *settings = BLSettings();
+                [settings setBool:YES forKey:BLForceDischargeAdapterDisabledKey];
+                [settings synchronize];
                 self.lastForceDischargeError = nil;
             } else {
                 self.lastForceDischargeError = error.localizedDescription;
@@ -135,7 +139,9 @@
     if (self.adapterDisabledByUs && !adapterEnabled) {
         if ([self.adapterController setAdapterEnabled:YES error:&error]) {
             self.adapterDisabledByUs = NO;
-            [BLSettings() setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
+            NSUserDefaults *settings = BLSettings();
+            [settings setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
+            [settings synchronize];
             self.lastForceDischargeError = nil;
         } else {
             self.lastForceDischargeError = error.localizedDescription;
