@@ -97,11 +97,11 @@ The **Menu bar display** submenu controls how the compact status item is shown:
 
 The icon uses distinct 10% charge levels and stage treatment for charging,
 on-power/not-charging, ordinary battery discharge, and force discharge. The
-charging state uses a compact Apple-style bolt; the on-power/not-charging
-state intentionally keeps the battery clean and communicates the state through
-the menu text and accessible label; force discharge uses a centered downward
-arrow overlay. In **Icon + %** mode, the icon/text spacing is slightly
-increased and the icon is optically centered against the percentage.
+charging state uses the compact Apple-style bolt; the on-power/not-charging
+state uses the matching solid Apple-style plug silhouette; force discharge
+uses the centered Apple-weight down-left arrow overlay. In **Icon + %** mode, the
+icon/text spacing is slightly increased and the icon is optically centered
+against the percentage.
 
 ### Force discharge
 
