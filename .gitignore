@@ -1,0 +1,8 @@
+build/
+release/
+source-package/
+.DS_Store
+*.o
+*.dSYM
+*.zip
+*.log
