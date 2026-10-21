@@ -95,11 +95,13 @@ The **Menu bar display** submenu controls how the compact status item is shown:
 - **% only** — the exact percentage without an icon;
 - **Text only** — `Battery - 58%`.
 
-The icon uses distinct 10% charge levels and stage markers for charging, on
-power but not charging, ordinary battery discharge, and force discharge. The
-stage is also exposed through the menu item's accessible label rather than
-being conveyed by color alone. In **Icon + %** mode, the icon/text spacing is
-slightly increased and the icon is optically centered against the percentage.
+The icon uses distinct 10% charge levels and stage treatment for charging,
+on-power/not-charging, ordinary battery discharge, and force discharge. The
+charging state uses a compact Apple-style bolt; the on-power/not-charging
+state intentionally keeps the battery clean and communicates the state through
+the menu text and accessible label; force discharge uses a centered downward
+arrow overlay. In **Icon + %** mode, the icon/text spacing is slightly
+increased and the icon is optically centered against the percentage.
 
 ### Force discharge
 

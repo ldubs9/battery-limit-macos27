@@ -39,7 +39,7 @@ codesign=ok
 
 The resulting CLI, helper, and app are arm64 Mach-O binaries. The app bundle has a valid plist and an ad-hoc signature.
 
-The 0.3.0 UI pass was also built and installed locally. A generated icon sheet was inspected at menu-bar scale: the battery fill advances in 10% steps, charging uses an explicit high-contrast lightning-bolt icon, on-power/not-charging uses a plus cutout, ordinary discharge has no stage marker, and force discharge uses a down-arrow marker. The dropdown now uses compact labels and exposes Icon only, Icon + %, % only, and Text only display modes. Icon + % uses a small additional trailing gap and a vertically centered battery canvas.
+The 0.3.0 UI pass was also built and installed locally. A generated icon sheet was inspected at menu-bar scale: the battery fill advances in 10% steps, charging uses a compact Apple-style lightning bolt traced from macOS's `battery-bolt-large` reference geometry, on-power/not-charging keeps the battery clean and exposes the state through text/accessibility, ordinary discharge has no stage marker, and force discharge uses a centered down-arrow overlay. The Apple asset itself is not bundled; the shipped icon uses native vector drawing. The dropdown now uses compact labels and exposes Icon only, Icon + %, % only, and Text only display modes. Icon + % uses a small additional trailing gap and a vertically centered battery canvas.
 
 Direct read-only verification on the target:
 

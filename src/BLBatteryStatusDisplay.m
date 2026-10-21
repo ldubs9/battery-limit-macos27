@@ -8,52 +8,42 @@ static CGFloat BLClampFraction(NSInteger percentage) {
     return (CGFloat)tenPercentLevel / 100.0;
 }
 
-static void BLClearPath(NSBezierPath *path) {
-    NSGraphicsContext *context = [NSGraphicsContext currentContext];
-    NSCompositingOperation previousOperation = context.compositingOperation;
-    context.compositingOperation = NSCompositingOperationClear;
-    [path fill];
-    context.compositingOperation = previousOperation;
-}
-
 static void BLDrawChargingBolt(void) {
     NSBezierPath *bolt = [NSBezierPath bezierPath];
-    [bolt moveToPoint:NSMakePoint(10.4, 4.0)];
-    [bolt lineToPoint:NSMakePoint(7.5, 7.0)];
-    [bolt lineToPoint:NSMakePoint(9.4, 7.0)];
-    [bolt lineToPoint:NSMakePoint(8.3, 10.0)];
-    [bolt lineToPoint:NSMakePoint(12.6, 6.1)];
-    [bolt lineToPoint:NSMakePoint(10.7, 6.1)];
+    // This is a compact hand-traced analogue of macOS Control Center's
+    // battery-bolt-large glyph: asymmetric, narrow, and intentionally taller
+    // than the battery body while remaining centered on it.
+    [bolt moveToPoint:NSMakePoint(11.0, 14.5)];
+    [bolt lineToPoint:NSMakePoint(4.5, 8.5)];
+    [bolt lineToPoint:NSMakePoint(9.0, 8.5)];
+    [bolt lineToPoint:NSMakePoint(6.7, 0.6)];
+    [bolt lineToPoint:NSMakePoint(13.5, 8.5)];
+    [bolt lineToPoint:NSMakePoint(10.0, 8.5)];
     [bolt closePath];
-    // Charging gets a real high-contrast bolt, rather than only a transparent
-    // cutout. This keeps the stage visible even when the battery is nearly
-    // empty and its fill is too small to expose a cutout.
     [[NSColor controlBackgroundColor] setFill];
     [bolt fill];
     [[NSColor labelColor] setStroke];
-    NSBezierPath *outline = [bolt copy];
-    outline.lineWidth = 0.7;
-    [outline stroke];
-}
-
-static void BLDrawPowerMarker(void) {
-    NSBezierPath *horizontal = [NSBezierPath bezierPathWithRect:NSMakeRect(7.9, 6.5, 4.2, 1.2)];
-    NSBezierPath *vertical = [NSBezierPath bezierPathWithRect:NSMakeRect(9.4, 5.0, 1.2, 4.2)];
-    BLClearPath(horizontal);
-    BLClearPath(vertical);
+    bolt.lineWidth = 0.3;
+    [bolt stroke];
 }
 
 static void BLDrawDownArrow(void) {
     NSBezierPath *arrow = [NSBezierPath bezierPath];
-    [arrow moveToPoint:NSMakePoint(9.1, 3.0)];
-    [arrow lineToPoint:NSMakePoint(10.9, 3.0)];
-    [arrow lineToPoint:NSMakePoint(10.9, 1.8)];
-    [arrow lineToPoint:NSMakePoint(12.2, 1.8)];
-    [arrow lineToPoint:NSMakePoint(10.0, 0.2)];
-    [arrow lineToPoint:NSMakePoint(7.8, 1.8)];
-    [arrow lineToPoint:NSMakePoint(9.1, 1.8)];
+    // Apple-style arrow.down proportions: a narrow shaft and broad, centered
+    // chevron, enlarged enough to remain legible over the filled battery.
+    [arrow moveToPoint:NSMakePoint(8.1, 11.0)];
+    [arrow lineToPoint:NSMakePoint(9.9, 11.0)];
+    [arrow lineToPoint:NSMakePoint(9.9, 6.2)];
+    [arrow lineToPoint:NSMakePoint(11.7, 6.2)];
+    [arrow lineToPoint:NSMakePoint(9.0, 3.3)];
+    [arrow lineToPoint:NSMakePoint(6.3, 6.2)];
+    [arrow lineToPoint:NSMakePoint(8.1, 6.2)];
     [arrow closePath];
+    [[NSColor controlBackgroundColor] setFill];
     [arrow fill];
+    [[NSColor labelColor] setStroke];
+    arrow.lineWidth = 0.3;
+    [arrow stroke];
 }
 
 NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
@@ -64,8 +54,9 @@ NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
     NSGraphicsContext *context = [NSGraphicsContext currentContext];
     context.imageInterpolation = NSImageInterpolationHigh;
 
-    BOOL explicitChargingColors = stage == BLBatteryPowerStageCharging;
-    NSColor *foreground = explicitChargingColors ? [NSColor labelColor] : [NSColor whiteColor];
+    BOOL explicitStageColors = stage == BLBatteryPowerStageCharging
+        || stage == BLBatteryPowerStageForceDischarging;
+    NSColor *foreground = explicitStageColors ? [NSColor labelColor] : [NSColor whiteColor];
     [foreground setFill];
     [foreground setStroke];
 
@@ -91,7 +82,8 @@ NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
             BLDrawChargingBolt();
             break;
         case BLBatteryPowerStageOnPowerNotCharging:
-            BLDrawPowerMarker();
+            // Apple keeps the connected/not-charging state in the status text;
+            // do not add a competing overlay to the user's battery artwork.
             break;
         case BLBatteryPowerStageForceDischarging:
             BLDrawDownArrow();
@@ -102,8 +94,8 @@ NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
     }
 
     [image unlockFocus];
-    image.template = !explicitChargingColors;
-    NSString *stageDescription = stage == BLBatteryPowerStageCharging ? @"charging" : @"battery";
+    image.template = !explicitStageColors;
+    NSString *stageDescription = BLBatteryStageAccessibilityName(stage);
     image.accessibilityDescription = [NSString stringWithFormat:@"%@ at %ld percent", stageDescription, (long)percentage];
     return image;
 }
