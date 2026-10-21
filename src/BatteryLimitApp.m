@@ -24,6 +24,7 @@
     (void)notification;
     self.controller = [[BLChargeLimitController alloc] init];
     self.adapterController = [[BLAdapterController alloc] init];
+    self.adapterDisabledByUs = [BLSettings() boolForKey:BLForceDischargeAdapterDisabledKey];
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.button.title = @"Battery — …";
 
@@ -91,6 +92,7 @@
     NSError *error = nil;
     if ([self.adapterController setAdapterEnabled:YES error:&error]) {
         self.adapterDisabledByUs = NO;
+        [BLSettings() setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
         self.lastForceDischargeError = nil;
     } else {
         self.lastForceDischargeError = error.localizedDescription;
@@ -119,6 +121,7 @@
         if (adapterEnabled) {
             if ([self.adapterController setAdapterEnabled:NO error:&error]) {
                 self.adapterDisabledByUs = YES;
+                [BLSettings() setBool:YES forKey:BLForceDischargeAdapterDisabledKey];
                 self.lastForceDischargeError = nil;
             } else {
                 self.lastForceDischargeError = error.localizedDescription;
@@ -132,6 +135,7 @@
     if (self.adapterDisabledByUs && !adapterEnabled) {
         if ([self.adapterController setAdapterEnabled:YES error:&error]) {
             self.adapterDisabledByUs = NO;
+            [BLSettings() setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
             self.lastForceDischargeError = nil;
         } else {
             self.lastForceDischargeError = error.localizedDescription;

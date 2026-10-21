@@ -127,6 +127,8 @@ static int applyForceDischargeOnce(BLChargeLimitController *controller) {
         printError(error);
         return 1;
     }
+    [BLSettings() setBool:YES forKey:BLForceDischargeAdapterDisabledKey];
+    [BLSettings() synchronize];
     return 0;
 }
 
@@ -169,6 +171,7 @@ static int handleForceDischarge(BLChargeLimitController *controller,
 
     if ([action isEqualToString:@"disable"]) {
         [settings setBool:NO forKey:BLForceDischargeEnabledKey];
+        [settings setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
         [settings synchronize];
         NSError *error = nil;
         if (adapter.helperPath && ![adapter setAdapterEnabled:YES error:&error]) {
