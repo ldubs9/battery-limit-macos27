@@ -214,7 +214,9 @@
     NSString *percentageText = battery ? [NSString stringWithFormat:@"%ld%%", (long)percentage] : @"—";
     NSButton *button = self.statusItem.button;
     button.image = (mode == BLStatusDisplayModeIconOnly || mode == BLStatusDisplayModeIconAndPercentage)
-        ? BLCreateBatteryIcon(percentage, stage)
+        ? (mode == BLStatusDisplayModeIconAndPercentage
+            ? BLCreateStatusItemBatteryIcon(percentage, stage)
+            : BLCreateBatteryIcon(percentage, stage))
         : nil;
     button.title = @"";
 

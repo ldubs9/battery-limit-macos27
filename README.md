@@ -98,7 +98,8 @@ The **Menu bar display** submenu controls how the compact status item is shown:
 The icon uses distinct 10% charge levels and stage markers for charging, on
 power but not charging, ordinary battery discharge, and force discharge. The
 stage is also exposed through the menu item's accessible label rather than
-being conveyed by color alone.
+being conveyed by color alone. In **Icon + %** mode, the icon/text spacing is
+slightly increased and the icon is optically centered against the percentage.
 
 ### Force discharge
 

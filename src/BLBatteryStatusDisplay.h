@@ -23,6 +23,10 @@ FOUNDATION_EXPORT NSString * const BLStatusDisplayModeKey;
 FOUNDATION_EXPORT NSImage *BLCreateBatteryIcon(NSInteger percentage,
                                                 BLBatteryPowerStage stage);
 
+/// Status-item variant with a 20% optical increase to the icon/title gap.
+FOUNDATION_EXPORT NSImage *BLCreateStatusItemBatteryIcon(NSInteger percentage,
+                                                         BLBatteryPowerStage stage);
+
 FOUNDATION_EXPORT NSString *BLBatteryStageShortName(BLBatteryPowerStage stage);
 FOUNDATION_EXPORT NSString *BLBatteryStageAccessibilityName(BLBatteryPowerStage stage);
 FOUNDATION_EXPORT NSString *BLStatusDisplayModeName(BLStatusDisplayMode mode);

@@ -18,19 +18,19 @@ static void BLClearPath(NSBezierPath *path) {
 
 static void BLDrawChargingBolt(void) {
     NSBezierPath *bolt = [NSBezierPath bezierPath];
-    [bolt moveToPoint:NSMakePoint(10.4, 5.0)];
-    [bolt lineToPoint:NSMakePoint(7.5, 8.0)];
-    [bolt lineToPoint:NSMakePoint(9.4, 8.0)];
-    [bolt lineToPoint:NSMakePoint(8.3, 11.0)];
-    [bolt lineToPoint:NSMakePoint(12.6, 7.1)];
-    [bolt lineToPoint:NSMakePoint(10.7, 7.1)];
+    [bolt moveToPoint:NSMakePoint(10.4, 4.0)];
+    [bolt lineToPoint:NSMakePoint(7.5, 7.0)];
+    [bolt lineToPoint:NSMakePoint(9.4, 7.0)];
+    [bolt lineToPoint:NSMakePoint(8.3, 10.0)];
+    [bolt lineToPoint:NSMakePoint(12.6, 6.1)];
+    [bolt lineToPoint:NSMakePoint(10.7, 6.1)];
     [bolt closePath];
     BLClearPath(bolt);
 }
 
 static void BLDrawPowerMarker(void) {
-    NSBezierPath *horizontal = [NSBezierPath bezierPathWithRect:NSMakeRect(7.9, 7.5, 4.2, 1.2)];
-    NSBezierPath *vertical = [NSBezierPath bezierPathWithRect:NSMakeRect(9.4, 6.0, 1.2, 4.2)];
+    NSBezierPath *horizontal = [NSBezierPath bezierPathWithRect:NSMakeRect(7.9, 6.5, 4.2, 1.2)];
+    NSBezierPath *vertical = [NSBezierPath bezierPathWithRect:NSMakeRect(9.4, 5.0, 1.2, 4.2)];
     BLClearPath(horizontal);
     BLClearPath(vertical);
 }
@@ -60,19 +60,19 @@ NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
     [foreground setFill];
     [foreground setStroke];
 
-    NSRect body = NSMakeRect(1.0, 4.0, 16.0, 9.0);
+    NSRect body = NSMakeRect(1.0, 3.0, 16.0, 9.0);
     NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:body xRadius:1.5 yRadius:1.5];
     outline.lineWidth = 1.35;
     [outline stroke];
 
-    NSRect terminal = NSMakeRect(17.4, 6.7, 2.2, 3.6);
+    NSRect terminal = NSMakeRect(17.4, 5.7, 2.2, 3.6);
     NSBezierPath *terminalPath = [NSBezierPath bezierPathWithRoundedRect:terminal xRadius:0.8 yRadius:0.8];
     [terminalPath fill];
 
     CGFloat fillFraction = BLClampFraction(percentage);
     CGFloat innerWidth = 12.5 * fillFraction;
     if (innerWidth > 0.0) {
-        NSRect fillRect = NSMakeRect(2.75, 5.75, innerWidth, 5.5);
+        NSRect fillRect = NSMakeRect(2.75, 4.75, innerWidth, 5.5);
         NSBezierPath *fill = [NSBezierPath bezierPathWithRoundedRect:fillRect xRadius:0.75 yRadius:0.75];
         [fill fill];
     }
@@ -96,6 +96,25 @@ NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
     image.template = YES;
     image.accessibilityDescription = [NSString stringWithFormat:@"Battery at %ld percent", (long)percentage];
     return image;
+}
+
+NSImage *BLCreateStatusItemBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
+    NSImage *base = BLCreateBatteryIcon(percentage, stage);
+    // AppKit's default image/title separation is small in a status button.
+    // Add 2 pt of transparent trailing space, approximately 20% more optical
+    // separation without changing the icon's physical size.
+    const CGFloat trailingPadding = 2.0;
+    NSImage *padded = [[NSImage alloc] initWithSize:NSMakeSize(base.size.width + trailingPadding,
+                                                                base.size.height)];
+    [padded lockFocus];
+    [base drawAtPoint:NSZeroPoint
+             fromRect:NSZeroRect
+            operation:NSCompositingOperationSourceOver
+             fraction:1.0];
+    [padded unlockFocus];
+    padded.template = YES;
+    padded.accessibilityDescription = base.accessibilityDescription;
+    return padded;
 }
 
 NSString *BLBatteryStageShortName(BLBatteryPowerStage stage) {
