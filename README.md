@@ -84,7 +84,7 @@ CLI="$HOME/Applications/battery-limit"
 "$CLI" disable
 ```
 
-The menu-bar app exposes 80%, 85%, 90%, 95%, and Disable (100%). The native limit is persisted by macOS's PowerUI service.
+The menu-bar app exposes 60%, 65%, 70%, 75%, 80%, 85%, 90%, 95%, and Disable (100%). The 80–100% choices are persisted by macOS's native PowerUI service. The 60–75% choices automatically use CHIE adapter mode with an 80% native safety ceiling, because macOS 27 does not expose native limits below 80% on this Mac.
 
 ### Menu-bar display
 
@@ -124,6 +124,8 @@ Disable it and restore adapter control:
 
 Force discharge requires a native or legacy CHIE helper and an explicit passwordless sudoers rule. If the menu says **install SMC helper**, run `./install.sh` or use `--skip-helper` only when a compatible legacy helper is already configured.
 
+Selecting a 60–75% limit enables adapter enforcement automatically; the separate Force discharge toggle is then marked as required and cannot be turned off without selecting an 80% or higher native limit. The app must be running for the adapter loop to enforce the lower threshold.
+
 Do not run this together with the old `battery maintain` daemon. Stop the old daemon first and verify that it has restored adapter control before switching tools; two loops must not write the same power state.
 
 ## Build and test
@@ -146,6 +148,7 @@ The build creates an ad-hoc local signature. It does not install anything, chang
 ## Limitations and safety
 
 - Native charge limits are limited to values exposed by macOS; on the verified Mac this is 80–100% in 5% steps.
+- The 60–75% choices are adapter-control mode, not native PowerUI limits. They can overshoot slightly between 15-second polls and require the CHIE helper.
 - The PowerUI framework and AppleSMC user-client are private Apple interfaces and may change in a future macOS update.
 - Force discharge can make the Mac run from its battery while physically plugged in. Use it only when you understand the resulting power behavior.
 - The helper is intentionally hardware-specific and refuses arbitrary SMC keys or values.

@@ -21,9 +21,10 @@ def run(*args, expect=0):
 help_text = run("--help")
 assert "battery-limit status" in help_text
 assert "force-discharge enable|disable" in help_text
+assert "60|65|70|75|80|85|90|95" in help_text
 
 limits = run("limits")
-assert "80%" in limits and "95%" in limits
+assert all(value in limits for value in ("60%", "65%", "70%", "75%", "80%", "95%"))
 
 status = run("status")
 assert "PowerUI supported: yes" in status

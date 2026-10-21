@@ -54,6 +54,11 @@ CHIE adapter control: enabled (/usr/local/co.palokaj.battery/smc)
 
 The new helper's direct read returned `00`. An invalid `CHIE` write value (`09`) was rejected with exit status 2; no SMC write was attempted.
 
+The lower-limit path was exercised without an adapter write: setting `60%`
+reported `Current limit: 60% (adapter mode; native safety limit 80%)` while
+the battery was at 46%, then setting `80%` restored the native mode. The
+reported limit list now includes 60, 65, 70, and 75%.
+
 ## Local installation
 
 The app was copied to:

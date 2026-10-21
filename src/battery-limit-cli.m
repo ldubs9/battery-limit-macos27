@@ -10,7 +10,7 @@ static void printUsage(void) {
     printf("Usage:\n");
     printf("  battery-limit status\n");
     printf("  battery-limit limits\n");
-    printf("  battery-limit set 80|85|90|95\n");
+    printf("  battery-limit set 60|65|70|75|80|85|90|95\n");
     printf("  battery-limit disable\n");
     printf("  battery-limit force-discharge status\n");
     printf("  battery-limit force-discharge enable|disable\n");
@@ -41,14 +41,26 @@ static int readLimit(BLChargeLimitController *controller,
         printError(error);
         return 1;
     }
-    if (![controller readCurrentLimit:limit enabled:enabled error:&error]) {
+
+    NSInteger nativeLimit = 0;
+    BOOL nativeEnabled = NO;
+    if (![controller readCurrentLimit:&nativeLimit enabled:&nativeEnabled error:&error]) {
         printError(error);
         return 1;
     }
+
+    NSInteger lowLimit = [BLSettings() integerForKey:BLLowChargeLimitKey];
+    *limit = (lowLimit >= 60 && lowLimit <= 75 && lowLimit % 5 == 0) ? lowLimit : nativeLimit;
+    *enabled = nativeEnabled;
     if (available) {
         *available = limits;
     }
     return 0;
+}
+
+static NSInteger validLowLimit(void) {
+    NSInteger lowLimit = [BLSettings() integerForKey:BLLowChargeLimitKey];
+    return (lowLimit >= 60 && lowLimit <= 75 && lowLimit % 5 == 0) ? lowLimit : 0;
 }
 
 static int printStatus(BLChargeLimitController *controller) {
@@ -59,19 +71,25 @@ static int printStatus(BLChargeLimitController *controller) {
         return 1;
     }
 
-    NSInteger currentLimit = 0;
+    NSInteger nativeLimit = 0;
     BOOL enabled = NO;
-    if (![controller readCurrentLimit:&currentLimit enabled:&enabled error:&error]) {
+    if (![controller readCurrentLimit:&nativeLimit enabled:&enabled error:&error]) {
         printError(error);
         return 1;
     }
+    NSInteger lowLimit = validLowLimit();
+    NSInteger currentLimit = lowLimit > 0 ? lowLimit : nativeLimit;
+    NSMutableArray<NSNumber *> *reportedLimits = [NSMutableArray arrayWithArray:@[@60, @65, @70, @75]];
+    [reportedLimits addObjectsFromArray:limits];
 
     NSOperatingSystemVersion version = NSProcessInfo.processInfo.operatingSystemVersion;
     printf("Battery Limit status\n");
     printf("macOS: %ld.%ld.%ld\n", (long)version.majorVersion, (long)version.minorVersion, (long)version.patchVersion);
     printf("PowerUI supported: %s\n", controller.isSupported ? "yes" : "no");
-    printf("Available limits: %s\n", joinedLimits(limits).UTF8String);
-    if (enabled) {
+    printf("Available limits: %s\n", joinedLimits(reportedLimits).UTF8String);
+    if (enabled && lowLimit > 0) {
+        printf("Current limit: %ld%% (adapter mode; native safety limit %ld%%)\n", (long)currentLimit, (long)nativeLimit);
+    } else if (enabled) {
         printf("Current limit: %ld%% (enabled)\n", (long)currentLimit);
     } else {
         printf("Current limit: disabled (100%%)\n");
@@ -86,6 +104,9 @@ static int printStatus(BLChargeLimitController *controller) {
     }
     BOOL forceEnabled = [BLSettings() boolForKey:BLForceDischargeEnabledKey];
     printf("Force discharge setting: %s\n", forceEnabled ? "enabled" : "disabled");
+    if (lowLimit > 0) {
+        printf("Low-limit adapter mode: enabled (%ld%%)\n", (long)lowLimit);
+    }
 
     BLAdapterController *adapter = [[BLAdapterController alloc] init];
     BOOL adapterEnabled = NO;
@@ -100,35 +121,73 @@ static int printStatus(BLChargeLimitController *controller) {
     return 0;
 }
 
-static int applyForceDischargeOnce(BLChargeLimitController *controller) {
+static int applyAdapterLimitOnce(BLChargeLimitController *controller) {
     NSInteger limit = 0;
     BOOL limitEnabled = NO;
     if (readLimit(controller, &limit, &limitEnabled, NULL) != 0) {
         return 1;
     }
     if (!limitEnabled) {
-        fprintf(stderr, "Set a native charge limit before enabling force discharge.\n");
+        fprintf(stderr, "Set a native charge limit before enabling adapter enforcement.\n");
         return 1;
     }
 
     BLBatteryState *battery = [BLBatteryState read:NULL];
-    if (!battery || battery.percentage <= limit) {
+    if (!battery) {
         return 0;
     }
 
     BLAdapterController *adapter = [[BLAdapterController alloc] init];
+    if (!adapter.helperPath) {
+        fprintf(stderr, "Limits below 80%% and force discharge require a CHIE SMC helper.\n");
+        return 1;
+    }
+
     BOOL adapterEnabled = NO;
     NSError *error = nil;
     if (![adapter readAdapterEnabled:&adapterEnabled error:&error]) {
         printError(error);
         return 1;
     }
-    if (adapterEnabled && ![adapter setAdapterEnabled:NO error:&error]) {
+
+    NSUserDefaults *settings = BLSettings();
+    BOOL adapterDisabledByUs = [settings boolForKey:BLForceDischargeAdapterDisabledKey];
+    if (battery.percentage > limit) {
+        if (adapterEnabled && ![adapter setAdapterEnabled:NO error:&error]) {
+            printError(error);
+            return 1;
+        }
+        if (adapterEnabled || adapterDisabledByUs) {
+            [settings setBool:YES forKey:BLForceDischargeAdapterDisabledKey];
+            [settings synchronize];
+        }
+    } else if (adapterDisabledByUs && !adapterEnabled) {
+        if (![adapter setAdapterEnabled:YES error:&error]) {
+            printError(error);
+            return 1;
+        }
+        [settings setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
+        [settings synchronize];
+    }
+    return 0;
+}
+
+static int restoreOwnedAdapter(BLAdapterController *adapter) {
+    NSUserDefaults *settings = BLSettings();
+    if (![settings boolForKey:BLForceDischargeAdapterDisabledKey]) {
+        return 0;
+    }
+    if (!adapter.helperPath) {
+        fprintf(stderr, "Cannot restore adapter control: CHIE SMC helper is unavailable.\n");
+        return 1;
+    }
+    NSError *error = nil;
+    if (![adapter setAdapterEnabled:YES error:&error]) {
         printError(error);
         return 1;
     }
-    [BLSettings() setBool:YES forKey:BLForceDischargeAdapterDisabledKey];
-    [BLSettings() synchronize];
+    [settings setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
+    [settings synchronize];
     return 0;
 }
 
@@ -140,6 +199,10 @@ static int handleForceDischarge(BLChargeLimitController *controller,
     if ([action isEqualToString:@"status"]) {
         BOOL enabled = [settings boolForKey:BLForceDischargeEnabledKey];
         printf("Force discharge setting: %s\n", enabled ? "enabled" : "disabled");
+        NSInteger lowLimit = validLowLimit();
+        if (lowLimit > 0) {
+            printf("Low-limit adapter mode: enabled (%ld%%)\n", (long)lowLimit);
+        }
         BOOL adapterEnabled = NO;
         NSError *error = nil;
         if ([adapter readAdapterEnabled:&adapterEnabled error:&error]) {
@@ -162,23 +225,31 @@ static int handleForceDischarge(BLChargeLimitController *controller,
         }
         [settings setBool:YES forKey:BLForceDischargeEnabledKey];
         [settings synchronize];
-        if (applyForceDischargeOnce(controller) != 0) {
+        if (applyAdapterLimitOnce(controller) != 0) {
             return 1;
         }
-        printf("Force discharge enabled; Battery Limit will cut adapter power above %ld%% and restore it at or below that limit.\n", (long)limit);
+        if (validLowLimit() > 0) {
+            printf("Force discharge remains required by the %ld%% low-limit adapter mode.\n", (long)limit);
+        } else {
+            printf("Force discharge enabled; Battery Limit will cut adapter power above %ld%% and restore it at or below that limit.\n", (long)limit);
+        }
         return 0;
     }
 
     if ([action isEqualToString:@"disable"]) {
         [settings setBool:NO forKey:BLForceDischargeEnabledKey];
-        [settings setBool:NO forKey:BLForceDischargeAdapterDisabledKey];
         [settings synchronize];
-        NSError *error = nil;
-        if (adapter.helperPath && ![adapter setAdapterEnabled:YES error:&error]) {
-            printError(error);
-            return 1;
+        if (validLowLimit() > 0) {
+            if (applyAdapterLimitOnce(controller) != 0) {
+                return 1;
+            }
+            printf("Optional force discharge disabled; the selected low limit remains enforced.\n");
+        } else {
+            if (restoreOwnedAdapter(adapter) != 0) {
+                return 1;
+            }
+            printf("Force discharge disabled; adapter control restored.\n");
         }
-        printf("Force discharge disabled; adapter control restored.\n");
         return 0;
     }
 
@@ -207,7 +278,9 @@ int main(int argc, const char * argv[]) {
                 printError(error);
                 return 1;
             }
-            printf("%s\n", joinedLimits(limits).UTF8String);
+            NSMutableArray<NSNumber *> *reportedLimits = [NSMutableArray arrayWithArray:@[@60, @65, @70, @75]];
+            [reportedLimits addObjectsFromArray:limits];
+            printf("%s\n", joinedLimits(reportedLimits).UTF8String);
             return 0;
         }
 
@@ -217,19 +290,53 @@ int main(int argc, const char * argv[]) {
                 printError(error);
                 return 1;
             }
+            [BLSettings() setInteger:0 forKey:BLLowChargeLimitKey];
+            [BLSettings() synchronize];
+            if (restoreOwnedAdapter([[BLAdapterController alloc] init]) != 0) {
+                return 1;
+            }
             printf("Charge limit disabled; macOS may charge to 100%%.\n");
             return 0;
         }
 
         if ([command isEqualToString:@"set"]) {
             if (argc != 3) {
-                fprintf(stderr, "Usage: battery-limit set 80|85|90|95\n");
+                fprintf(stderr, "Usage: battery-limit set 60|65|70|75|80|85|90|95\n");
                 return 2;
             }
             NSInteger limit = [[NSString stringWithUTF8String:argv[2]] integerValue];
             NSError *error = nil;
-            if (![controller setLimit:limit error:&error]) {
+            if (limit >= 60 && limit <= 75 && limit % 5 == 0) {
+                BLAdapterController *adapter = [[BLAdapterController alloc] init];
+                if (!adapter.helperPath) {
+                    fprintf(stderr, "Limits below 80%% require a CHIE SMC helper.\n");
+                    return 1;
+                }
+                if (![controller setLimit:80 error:&error]) {
+                    printError(error);
+                    return 1;
+                }
+                NSUserDefaults *settings = BLSettings();
+                [settings setInteger:limit forKey:BLLowChargeLimitKey];
+                [settings synchronize];
+                if (applyAdapterLimitOnce(controller) != 0) {
+                    return 1;
+                }
+                printf("Charge limit set to %ld%% using adapter mode below macOS's native 80%% floor.\n", (long)limit);
+                return 0;
+            }
+            if (limit < 80 || limit > 95 || limit % 5 != 0 || ![controller setLimit:limit error:&error]) {
+                if (!error) {
+                    error = [NSError errorWithDomain:@"com.ecc.BatteryLimit.PowerUI"
+                                                 code:21
+                                             userInfo:@{NSLocalizedDescriptionKey: @"Charge limit must be 60, 65, 70, 75, 80, 85, 90, or 95 percent."}];
+                }
                 printError(error);
+                return 1;
+            }
+            [BLSettings() setInteger:0 forKey:BLLowChargeLimitKey];
+            [BLSettings() synchronize];
+            if (restoreOwnedAdapter([[BLAdapterController alloc] init]) != 0) {
                 return 1;
             }
             printf("Charge limit set to %ld%%.\n", (long)limit);

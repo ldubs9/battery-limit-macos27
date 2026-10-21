@@ -41,7 +41,7 @@
 
     NSMenuItem *setLimit = [[NSMenuItem alloc] initWithTitle:@"Charge limit" action:nil keyEquivalent:@""];
     self.limitsMenu = [[NSMenu alloc] initWithTitle:@"Charge limit"];
-    for (NSNumber *limit in @[@80, @85, @90, @95]) {
+    for (NSNumber *limit in @[@60, @65, @70, @75, @80, @85, @90, @95]) {
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"%@%%", limit]
                                                        action:@selector(selectLimit:)
                                                 keyEquivalent:@""];
@@ -109,6 +109,15 @@
     [settings synchronize];
 }
 
+- (NSInteger)lowLimitOverride {
+    NSInteger limit = [BLSettings() integerForKey:BLLowChargeLimitKey];
+    return (limit >= 60 && limit <= 75 && limit % 5 == 0) ? limit : 0;
+}
+
+- (BOOL)adapterEnforcementEnabled {
+    return self.forceDischargeEnabled || [self lowLimitOverride] > 0;
+}
+
 - (BLStatusDisplayMode)displayMode {
     NSUserDefaults *settings = BLSettings();
     if (![settings objectForKey:BLStatusDisplayModeKey]) {
@@ -145,7 +154,7 @@
 
 - (void)evaluateForceDischargeForLimit:(NSInteger)limit
                                battery:(BLBatteryState *)battery {
-    if (!self.forceDischargeEnabled || !battery) {
+    if (![self adapterEnforcementEnabled] || !battery) {
         return;
     }
 
@@ -254,15 +263,21 @@
     }
 }
 
-- (void)updateForceDischargeMenuWithLimitEnabled:(BOOL)limitEnabled {
+- (void)updateForceDischargeMenuWithLimitEnabled:(BOOL)limitEnabled
+                                        lowLimit:(NSInteger)lowLimit {
     BOOL forceEnabled = self.forceDischargeEnabled;
-    self.forceDischargeMenuItem.state = forceEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.forceDischargeMenuItem.enabled = self.adapterController.helperPath != nil;
+    BOOL lowLimitActive = lowLimit > 0;
+    self.forceDischargeMenuItem.state = (forceEnabled || lowLimitActive)
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.forceDischargeMenuItem.enabled = self.adapterController.helperPath != nil && !lowLimitActive;
     self.forceDischargeMenuItem.title = @"Force discharge";
     if (self.lastForceDischargeError.length > 0) {
         self.forceDischargeMenuItem.toolTip = self.lastForceDischargeError;
     } else if (!self.adapterController.helperPath) {
         self.forceDischargeMenuItem.toolTip = @"Install the CHIE SMC helper to enable force discharge.";
+    } else if (lowLimitActive) {
+        self.forceDischargeMenuItem.toolTip = [NSString stringWithFormat:@"Required to enforce the %@%% limit below macOS's native 80%% floor.", @(lowLimit)];
     } else if (!limitEnabled) {
         self.forceDischargeMenuItem.toolTip = @"Set a charge limit before enabling force discharge.";
     } else {
@@ -270,6 +285,21 @@
             ? @"Enabled: adapter power is cut above the charge limit."
             : @"Disabled";
     }
+}
+
+- (BOOL)ensureNativeSafetyLimitForLowLimit:(NSInteger)lowLimit
+                               nativeLimit:(NSInteger *)nativeLimit
+                                   enabled:(BOOL *)enabled
+                                     error:(NSError **)error {
+    if (lowLimit == 0 || (*enabled && *nativeLimit == 80)) {
+        return YES;
+    }
+    if (![self.controller setLimit:80 error:error]) {
+        return NO;
+    }
+    *nativeLimit = 80;
+    *enabled = YES;
+    return YES;
 }
 
 - (void)refresh:(id)sender {
@@ -291,9 +321,23 @@
         return;
     }
 
+    NSInteger lowLimit = [self lowLimitOverride];
+    NSError *safetyError = nil;
+    BOOL safetyLimitReady = [self ensureNativeSafetyLimitForLowLimit:lowLimit
+                                                           nativeLimit:&limit
+                                                               enabled:&enabled
+                                                                 error:&safetyError];
+    if (!safetyLimitReady) {
+        self.lastForceDischargeError = safetyError.localizedDescription;
+    }
+
+    NSInteger effectiveLimit = lowLimit > 0 ? lowLimit : limit;
+    BOOL effectiveLimitEnabled = enabled && (lowLimit == 0 || safetyLimitReady);
     if (self.forceDischargeEnabled && enabled) {
-        [self evaluateForceDischargeForLimit:limit battery:battery];
-    } else if (!self.forceDischargeEnabled || !enabled) {
+        [self evaluateForceDischargeForLimit:effectiveLimit battery:battery];
+    } else if ([self adapterEnforcementEnabled] && effectiveLimitEnabled) {
+        [self evaluateForceDischargeForLimit:effectiveLimit battery:battery];
+    } else if (![self adapterEnforcementEnabled] || !effectiveLimitEnabled) {
         [self restoreAdapterIfNeeded];
     }
 
@@ -301,7 +345,9 @@
     NSInteger percentage = battery ? battery.percentage : 0;
     NSString *percentageText = battery ? [NSString stringWithFormat:@"%ld%%", (long)percentage] : @"—";
     NSString *stageText = BLBatteryStageShortName(stage);
-    NSString *limitText = enabled ? [NSString stringWithFormat:@"Limit %@%%", @(limit)] : @"Limit off";
+    NSString *limitText = effectiveLimitEnabled
+        ? [NSString stringWithFormat:@"Limit %@%%", @(effectiveLimit)]
+        : @"Limit off";
 
     self.statusMenuItem.title = battery
         ? [NSString stringWithFormat:@"%@ · %@ · %@", percentageText, stageText, limitText]
@@ -315,15 +361,19 @@
         if (item.tag == 0) {
             continue;
         }
-        item.enabled = item.tag == 100 || [available containsObject:@(item.tag)];
-        item.state = (enabled && item.tag == limit) || (!enabled && item.tag == 100)
+        item.enabled = item.tag == 100
+            || (item.tag < 80 ? self.adapterController.helperPath != nil
+                              : [available containsObject:@(item.tag)]);
+        item.state = (lowLimit > 0 && item.tag == lowLimit)
+            || (lowLimit == 0 && enabled && item.tag == limit)
+            || (lowLimit == 0 && !enabled && item.tag == 100)
             ? NSControlStateValueOn
             : NSControlStateValueOff;
     }
 
     [self updateStatusButtonForBattery:battery stage:stage];
     [self updateDisplayModeMenu];
-    [self updateForceDischargeMenuWithLimitEnabled:enabled];
+    [self updateForceDischargeMenuWithLimitEnabled:effectiveLimitEnabled lowLimit:lowLimit];
 }
 
 - (void)toggleForceDischarge:(NSMenuItem *)sender {
@@ -343,10 +393,34 @@
 }
 
 - (void)selectLimit:(NSMenuItem *)sender {
+    NSInteger selectedLimit = sender.tag;
     NSError *error = nil;
-    BOOL success = sender.tag == 100
-        ? [self.controller disable:&error]
-        : [self.controller setLimit:sender.tag error:&error];
+    BOOL success = NO;
+    if (selectedLimit < 80) {
+        if (!self.adapterController.helperPath) {
+            error = [NSError errorWithDomain:@"com.ecc.BatteryLimit.Adapter"
+                                         code:20
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Limits below 80% require the CHIE SMC helper."}];
+        } else {
+            // Keep macOS's native 80% cap as a safety ceiling while the
+            // adapter loop enforces the requested lower limit.
+            success = [self.controller setLimit:80 error:&error];
+        }
+        if (success) {
+            NSUserDefaults *settings = BLSettings();
+            [settings setInteger:selectedLimit forKey:BLLowChargeLimitKey];
+            [settings synchronize];
+        }
+    } else {
+        success = selectedLimit == 100
+            ? [self.controller disable:&error]
+            : [self.controller setLimit:selectedLimit error:&error];
+        if (success) {
+            NSUserDefaults *settings = BLSettings();
+            [settings setInteger:0 forKey:BLLowChargeLimitKey];
+            [settings synchronize];
+        }
+    }
     if (!success) {
         NSAlert *alert = [[NSAlert alloc] init];
         alert.alertStyle = NSAlertStyleWarning;
