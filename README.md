@@ -86,6 +86,20 @@ CLI="$HOME/Applications/battery-limit"
 
 The menu-bar app exposes 80%, 85%, 90%, 95%, and Disable (100%). The native limit is persisted by macOS's PowerUI service.
 
+### Menu-bar display
+
+The **Menu bar display** submenu controls how the compact status item is shown:
+
+- **Icon only** — a monochrome horizontal battery icon with 10% fill steps;
+- **Icon + %** — the icon plus the exact battery percentage;
+- **% only** — the exact percentage without an icon;
+- **Text only** — `Battery - 58%`.
+
+The icon uses distinct 10% charge levels and stage markers for charging, on
+power but not charging, ordinary battery discharge, and force discharge. The
+stage is also exposed through the menu item's accessible label rather than
+being conveyed by color alone.
+
 ### Force discharge
 
 Enable the automatic above-limit discharge loop:

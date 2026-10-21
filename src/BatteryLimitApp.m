@@ -2,6 +2,7 @@
 
 #import "BLAdapterController.h"
 #import "BLBatteryState.h"
+#import "BLBatteryStatusDisplay.h"
 #import "BLSettings.h"
 #import "PowerUIChargeLimit.h"
 
@@ -11,6 +12,7 @@
 @property (nonatomic, strong) NSStatusItem *statusItem;
 @property (nonatomic, strong) NSMenu *menu;
 @property (nonatomic, strong) NSMenu *limitsMenu;
+@property (nonatomic, strong) NSMenu *displayModeMenu;
 @property (nonatomic, strong) NSMenuItem *statusMenuItem;
 @property (nonatomic, strong) NSMenuItem *forceDischargeMenuItem;
 @property (nonatomic, strong) NSTimer *pollTimer;
@@ -25,8 +27,11 @@
     self.controller = [[BLChargeLimitController alloc] init];
     self.adapterController = [[BLAdapterController alloc] init];
     self.adapterDisabledByUs = [BLSettings() boolForKey:BLForceDischargeAdapterDisabledKey];
+
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-    self.statusItem.button.title = @"Battery — …";
+    self.statusItem.button.title = @"—";
+    self.statusItem.button.imageScaling = NSImageScaleProportionallyDown;
+    self.statusItem.button.imagePosition = NSImageLeft;
 
     self.menu = [[NSMenu alloc] initWithTitle:@"Battery Limit"];
     self.statusMenuItem = [[NSMenuItem alloc] initWithTitle:@"Reading status…" action:nil keyEquivalent:@""];
@@ -34,8 +39,8 @@
     [self.menu addItem:self.statusMenuItem];
     [self.menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem *setLimit = [[NSMenuItem alloc] initWithTitle:@"Set charge limit" action:nil keyEquivalent:@""];
-    self.limitsMenu = [[NSMenu alloc] initWithTitle:@"Set charge limit"];
+    NSMenuItem *setLimit = [[NSMenuItem alloc] initWithTitle:@"Charge limit" action:nil keyEquivalent:@""];
+    self.limitsMenu = [[NSMenu alloc] initWithTitle:@"Charge limit"];
     for (NSNumber *limit in @[@80, @85, @90, @95]) {
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"%@%%", limit]
                                                        action:@selector(selectLimit:)
@@ -54,15 +59,34 @@
     setLimit.submenu = self.limitsMenu;
     [self.menu addItem:setLimit];
 
-    self.forceDischargeMenuItem = [[NSMenuItem alloc] initWithTitle:@"Force discharge above limit"
+    self.forceDischargeMenuItem = [[NSMenuItem alloc] initWithTitle:@"Force discharge"
                                                                action:@selector(toggleForceDischarge:)
                                                         keyEquivalent:@""];
     self.forceDischargeMenuItem.target = self;
     [self.menu addItem:self.forceDischargeMenuItem];
-    [self.menu addItem:[[NSMenuItem alloc] initWithTitle:@"Refresh" action:@selector(refresh:) keyEquivalent:@""]];
-    self.menu.itemArray.lastObject.target = self;
+
+    NSMenuItem *displayMode = [[NSMenuItem alloc] initWithTitle:@"Menu bar display" action:nil keyEquivalent:@""];
+    self.displayModeMenu = [[NSMenu alloc] initWithTitle:@"Menu bar display"];
+    for (NSInteger rawMode = BLStatusDisplayModeIconOnly;
+         rawMode <= BLStatusDisplayModeTextOnly;
+         rawMode++) {
+        BLStatusDisplayMode mode = (BLStatusDisplayMode)rawMode;
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:BLStatusDisplayModeName(mode)
+                                                       action:@selector(selectDisplayMode:)
+                                                keyEquivalent:@""];
+        item.target = self;
+        item.tag = rawMode;
+        [self.displayModeMenu addItem:item];
+    }
+    displayMode.submenu = self.displayModeMenu;
+    [self.menu addItem:displayMode];
+
+    NSMenuItem *refreshItem = [[NSMenuItem alloc] initWithTitle:@"Refresh" action:@selector(refresh:) keyEquivalent:@""];
+    refreshItem.target = self;
+    [self.menu addItem:refreshItem];
     [self.menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit Battery Limit" action:@selector(quit:) keyEquivalent:@"q"];
+
+    NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quit.target = self;
     [self.menu addItem:quit];
     self.statusItem.menu = self.menu;
@@ -82,6 +106,24 @@
 - (void)setForceDischargeEnabled:(BOOL)enabled {
     NSUserDefaults *settings = BLSettings();
     [settings setBool:enabled forKey:BLForceDischargeEnabledKey];
+    [settings synchronize];
+}
+
+- (BLStatusDisplayMode)displayMode {
+    NSUserDefaults *settings = BLSettings();
+    if (![settings objectForKey:BLStatusDisplayModeKey]) {
+        return BLStatusDisplayModeIconAndPercentage;
+    }
+    NSInteger rawMode = [settings integerForKey:BLStatusDisplayModeKey];
+    if (rawMode < BLStatusDisplayModeIconOnly || rawMode > BLStatusDisplayModeTextOnly) {
+        return BLStatusDisplayModeIconAndPercentage;
+    }
+    return (BLStatusDisplayMode)rawMode;
+}
+
+- (void)setDisplayMode:(BLStatusDisplayMode)mode {
+    NSUserDefaults *settings = BLSettings();
+    [settings setInteger:mode forKey:BLStatusDisplayModeKey];
     [settings synchronize];
 }
 
@@ -108,7 +150,7 @@
     }
 
     if (!self.adapterController.helperPath) {
-        self.lastForceDischargeError = @"No CHIE SMC helper is installed; run install.sh for force discharge.";
+        self.lastForceDischargeError = @"No CHIE helper; run install.sh";
         return;
     }
 
@@ -149,25 +191,83 @@
     }
 }
 
-- (void)updateForceDischargeMenuWithBattery:(BLBatteryState *)battery
-                                      limit:(NSInteger)limit
-                                    enabled:(BOOL)limitEnabled {
+- (BLBatteryPowerStage)stageForBattery:(BLBatteryState *)battery {
+    if (!battery) {
+        return BLBatteryPowerStageUnknown;
+    }
+    if (self.adapterDisabledByUs) {
+        return BLBatteryPowerStageForceDischarging;
+    }
+    if (battery.isExternalConnected && battery.isCharging) {
+        return BLBatteryPowerStageCharging;
+    }
+    if (battery.isExternalConnected) {
+        return BLBatteryPowerStageOnPowerNotCharging;
+    }
+    return BLBatteryPowerStageDischarging;
+}
+
+- (void)updateStatusButtonForBattery:(BLBatteryState *)battery
+                               stage:(BLBatteryPowerStage)stage {
+    BLStatusDisplayMode mode = [self displayMode];
+    NSInteger percentage = battery ? battery.percentage : 0;
+    NSString *percentageText = battery ? [NSString stringWithFormat:@"%ld%%", (long)percentage] : @"—";
+    NSButton *button = self.statusItem.button;
+    button.image = (mode == BLStatusDisplayModeIconOnly || mode == BLStatusDisplayModeIconAndPercentage)
+        ? BLCreateBatteryIcon(percentage, stage)
+        : nil;
+    button.title = @"";
+
+    switch (mode) {
+        case BLStatusDisplayModeIconOnly:
+            button.imagePosition = NSImageOnly;
+            break;
+        case BLStatusDisplayModeIconAndPercentage:
+            button.imagePosition = NSImageLeft;
+            button.title = percentageText;
+            break;
+        case BLStatusDisplayModePercentageOnly:
+            button.imagePosition = NSNoImage;
+            button.title = percentageText;
+            break;
+        case BLStatusDisplayModeTextOnly:
+            button.imagePosition = NSNoImage;
+            button.title = battery
+                ? [NSString stringWithFormat:@"Battery - %@", percentageText]
+                : @"Battery - unavailable";
+            break;
+    }
+
+    NSString *accessibilityText = battery
+        ? [NSString stringWithFormat:@"Battery at %ld percent, %@", (long)percentage, BLBatteryStageAccessibilityName(stage)]
+        : @"Battery status unavailable";
+    button.accessibilityLabel = accessibilityText;
+    button.toolTip = accessibilityText;
+}
+
+- (void)updateDisplayModeMenu {
+    BLStatusDisplayMode currentMode = [self displayMode];
+    for (NSMenuItem *item in self.displayModeMenu.itemArray) {
+        item.state = item.tag == currentMode ? NSControlStateValueOn : NSControlStateValueOff;
+    }
+}
+
+- (void)updateForceDischargeMenuWithLimitEnabled:(BOOL)limitEnabled {
     BOOL forceEnabled = self.forceDischargeEnabled;
     self.forceDischargeMenuItem.state = forceEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.forceDischargeMenuItem.enabled = self.adapterController.helperPath != nil;
-
-    if (!self.adapterController.helperPath) {
-        self.forceDischargeMenuItem.title = @"Force discharge (install SMC helper)";
+    self.forceDischargeMenuItem.title = @"Force discharge";
+    if (self.lastForceDischargeError.length > 0) {
+        self.forceDischargeMenuItem.toolTip = self.lastForceDischargeError;
+    } else if (!self.adapterController.helperPath) {
+        self.forceDischargeMenuItem.toolTip = @"Install the CHIE SMC helper to enable force discharge.";
     } else if (!limitEnabled) {
-        self.forceDischargeMenuItem.title = @"Force discharge (set a charge limit first)";
-    } else if (self.adapterDisabledByUs) {
-        self.forceDischargeMenuItem.title = @"Force discharge active (adapter off)";
-    } else if (forceEnabled) {
-        self.forceDischargeMenuItem.title = @"Force discharge above limit ✓";
+        self.forceDischargeMenuItem.toolTip = @"Set a charge limit before enabling force discharge.";
     } else {
-        self.forceDischargeMenuItem.title = @"Force discharge above limit";
+        self.forceDischargeMenuItem.toolTip = forceEnabled
+            ? @"Enabled: adapter power is cut above the charge limit."
+            : @"Disabled";
     }
-
 }
 
 - (void)refresh:(id)sender {
@@ -180,9 +280,12 @@
     BLBatteryState *battery = [BLBatteryState read:NULL];
 
     if (!limitRead) {
-        self.statusItem.button.title = @"Battery — unavailable";
-        self.statusMenuItem.title = error.localizedDescription ? error.localizedDescription : @"Native charge limit unavailable";
+        self.statusItem.button.image = nil;
+        self.statusItem.button.title = @"Battery - unavailable";
+        self.statusMenuItem.image = nil;
+        self.statusMenuItem.title = @"Battery status unavailable";
         self.forceDischargeMenuItem.enabled = NO;
+        [self updateDisplayModeMenu];
         return;
     }
 
@@ -192,24 +295,19 @@
         [self restoreAdapterIfNeeded];
     }
 
-    NSString *batteryText = battery ? [NSString stringWithFormat:@"%ld%%", (long)battery.percentage] : @"battery ?";
-    NSString *forceText = @"Force discharge: off";
-    if (self.forceDischargeEnabled) {
-        if (self.adapterDisabledByUs) {
-            forceText = @"Force discharge: active";
-        } else if (self.lastForceDischargeError.length > 0) {
-            forceText = [NSString stringWithFormat:@"Force discharge: %@", self.lastForceDischargeError];
-        } else {
-            forceText = @"Force discharge: armed";
-        }
-    }
+    BLBatteryPowerStage stage = [self stageForBattery:battery];
+    NSInteger percentage = battery ? battery.percentage : 0;
+    NSString *percentageText = battery ? [NSString stringWithFormat:@"%ld%%", (long)percentage] : @"—";
+    NSString *stageText = BLBatteryStageShortName(stage);
+    NSString *limitText = enabled ? [NSString stringWithFormat:@"Limit %@%%", @(limit)] : @"Limit off";
 
-    self.statusItem.button.title = enabled
-        ? [NSString stringWithFormat:@"Battery — %@%@", batteryText, self.adapterDisabledByUs ? @" ⤓" : @""]
-        : [NSString stringWithFormat:@"Battery — %@", batteryText];
-    self.statusMenuItem.title = enabled
-        ? [NSString stringWithFormat:@"Limit: %@%% · %@ · %@", @(limit), batteryText, forceText]
-        : [NSString stringWithFormat:@"Limit: disabled (100%%) · %@ · %@", batteryText, forceText];
+    self.statusMenuItem.title = battery
+        ? [NSString stringWithFormat:@"%@ · %@ · %@", percentageText, stageText, limitText]
+        : [NSString stringWithFormat:@"Battery unavailable · %@", limitText];
+    self.statusMenuItem.image = battery ? BLCreateBatteryIcon(percentage, stage) : nil;
+    self.statusMenuItem.toolTip = battery
+        ? [NSString stringWithFormat:@"Battery at %@, %@, %@", percentageText, BLBatteryStageAccessibilityName(stage), limitText]
+        : @"Battery status unavailable";
 
     for (NSMenuItem *item in self.limitsMenu.itemArray) {
         if (item.tag == 0) {
@@ -220,7 +318,10 @@
             ? NSControlStateValueOn
             : NSControlStateValueOff;
     }
-    [self updateForceDischargeMenuWithBattery:battery limit:limit enabled:enabled];
+
+    [self updateStatusButtonForBattery:battery stage:stage];
+    [self updateDisplayModeMenu];
+    [self updateForceDischargeMenuWithLimitEnabled:enabled];
 }
 
 - (void)toggleForceDischarge:(NSMenuItem *)sender {
@@ -231,6 +332,11 @@
         [self restoreAdapterIfNeeded];
         self.lastForceDischargeError = nil;
     }
+    [self refresh:nil];
+}
+
+- (void)selectDisplayMode:(NSMenuItem *)sender {
+    [self setDisplayMode:(BLStatusDisplayMode)sender.tag];
     [self refresh:nil];
 }
 

@@ -56,7 +56,7 @@ plist_path = Path(sys.argv[1])
 with plist_path.open("rb") as handle:
     plist = plistlib.load(handle)
 assert plist["CFBundleIdentifier"] == "com.ecc.BatteryLimit"
-assert plist["CFBundleShortVersionString"] == "0.2.0"
+assert plist["CFBundleShortVersionString"] == "0.3.0"
 assert plist["LSUIElement"] is True
 subprocess.run(["codesign", "--verify", "--deep", "--strict", str(plist_path.parent.parent)], check=True)
 print("PASS: app bundle plist and ad-hoc signature")

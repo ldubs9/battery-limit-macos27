@@ -17,7 +17,7 @@ fi
 
 COMMON_FLAGS=(-fobjc-arc -Wall -Wextra -Wpedantic -mmacosx-version-min=15.0 "${SYSROOT_FLAGS[@]}")
 
-for source in PowerUIChargeLimit BLAdapterController BLBatteryState BLSettings; do
+for source in PowerUIChargeLimit BLAdapterController BLBatteryState BLBatteryStatusDisplay BLSettings; do
     clang "${COMMON_FLAGS[@]}" -c "$SRC_DIR/$source.m" \
         -o "$BUILD_DIR/$source.o"
 done
@@ -34,6 +34,7 @@ clang "${COMMON_FLAGS[@]}" "$SRC_DIR/BatteryLimitApp.m" \
     "$BUILD_DIR/PowerUIChargeLimit.o" \
     "$BUILD_DIR/BLAdapterController.o" \
     "$BUILD_DIR/BLBatteryState.o" \
+    "$BUILD_DIR/BLBatteryStatusDisplay.o" \
     "$BUILD_DIR/BLSettings.o" \
     -framework AppKit -framework Foundation -framework IOKit \
     -o "$APP_DIR/Contents/MacOS/BatteryLimit"
