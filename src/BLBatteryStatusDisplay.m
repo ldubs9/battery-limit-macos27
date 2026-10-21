@@ -25,7 +25,15 @@ static void BLDrawChargingBolt(void) {
     [bolt lineToPoint:NSMakePoint(12.6, 6.1)];
     [bolt lineToPoint:NSMakePoint(10.7, 6.1)];
     [bolt closePath];
-    BLClearPath(bolt);
+    // Charging gets a real high-contrast bolt, rather than only a transparent
+    // cutout. This keeps the stage visible even when the battery is nearly
+    // empty and its fill is too small to expose a cutout.
+    [[NSColor controlBackgroundColor] setFill];
+    [bolt fill];
+    [[NSColor labelColor] setStroke];
+    NSBezierPath *outline = [bolt copy];
+    outline.lineWidth = 0.7;
+    [outline stroke];
 }
 
 static void BLDrawPowerMarker(void) {
@@ -56,7 +64,8 @@ NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
     NSGraphicsContext *context = [NSGraphicsContext currentContext];
     context.imageInterpolation = NSImageInterpolationHigh;
 
-    NSColor *foreground = [NSColor whiteColor];
+    BOOL explicitChargingColors = stage == BLBatteryPowerStageCharging;
+    NSColor *foreground = explicitChargingColors ? [NSColor labelColor] : [NSColor whiteColor];
     [foreground setFill];
     [foreground setStroke];
 
@@ -93,8 +102,9 @@ NSImage *BLCreateBatteryIcon(NSInteger percentage, BLBatteryPowerStage stage) {
     }
 
     [image unlockFocus];
-    image.template = YES;
-    image.accessibilityDescription = [NSString stringWithFormat:@"Battery at %ld percent", (long)percentage];
+    image.template = !explicitChargingColors;
+    NSString *stageDescription = stage == BLBatteryPowerStageCharging ? @"charging" : @"battery";
+    image.accessibilityDescription = [NSString stringWithFormat:@"%@ at %ld percent", stageDescription, (long)percentage];
     return image;
 }
 
@@ -112,7 +122,7 @@ NSImage *BLCreateStatusItemBatteryIcon(NSInteger percentage, BLBatteryPowerStage
             operation:NSCompositingOperationSourceOver
              fraction:1.0];
     [padded unlockFocus];
-    padded.template = YES;
+    padded.template = base.template;
     padded.accessibilityDescription = base.accessibilityDescription;
     return padded;
 }

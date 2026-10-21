@@ -90,7 +90,7 @@ The menu-bar app exposes 60%, 65%, 70%, 75%, 80%, 85%, 90%, 95%, and Disable (10
 
 The **Menu bar display** submenu controls how the compact status item is shown:
 
-- **Icon only** — a monochrome horizontal battery icon with 10% fill steps;
+- **Icon only** — a monochrome horizontal battery icon with 10% fill steps and a visible lightning-bolt charging variant;
 - **Icon + %** — the icon plus the exact battery percentage;
 - **% only** — the exact percentage without an icon;
 - **Text only** — `Battery - 58%`.
